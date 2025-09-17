@@ -30,8 +30,8 @@ class RequestListByStatus implements RestApiController {
     @Override
     RestApiResponse doHandle(HttpServletRequest request, RestApiResponseBuilder responseBuilder, RestAPIContext context) {
         def p = request.getParameter "p"
-		def RISK_TEAM_GROUP_NAME = "risk";
-		p = p
+        def RISK_TEAM_GROUP_NAME = "risk";
+        p = p
         if (p == null) {
             return buildResponse(responseBuilder, HttpServletResponse.SC_BAD_REQUEST,"""{"error" : "the parameter p is missing"}""")
         }
@@ -45,72 +45,79 @@ class RequestListByStatus implements RestApiController {
         if (statusList == null) {
             return buildResponse(responseBuilder, HttpServletResponse.SC_BAD_REQUEST,"""{"error" : "the parameter statusList is missing"}""")
         }
-		def session = context.apiSession;
-		def userId = session.userId;
-		def identityApi = context.apiClient.identityAPI;
-		def memberships = identityApi.getUserMemberships(userId, 0, 10, UserMembershipCriterion.ASSIGNED_DATE_ASC);
-		def isRiskTeam = memberships.any { m ->
-			identityApi.getGroup(m.groupId).name == RISK_TEAM_GROUP_NAME;
-		}
-		
-		
-		
-		def processApi = context.apiClient.processAPI;
-		statusList = statusList.split(",").findAll{ it } as String[];
-		def requestDAO = context.apiClient.getDAO(BLRequestDAO.class);
-		def isStatusListEmpty = statusList.length == 0;
-		def requests, requestCount;
-		if (isStatusListEmpty) {
-			requests = requestDAO.find(p as int, c as int)
-			requestCount = requestDAO.countForFind();
-		} else {
-			requests = requestDAO.findByStatus(statusList, p as int, c as int)
-			requestCount = requestDAO.countForFindByStatus(statusList);
-		}
-		
+        def session = context.apiSession;
+        def userId = session.userId;
+        def identityApi = context.apiClient.identityAPI;
+        def memberships = identityApi.getUserMemberships(userId, 0, 10, UserMembershipCriterion.ASSIGNED_DATE_ASC);
+        def isRiskTeam = memberships.any { m ->
+            identityApi.getGroup(m.groupId).name == RISK_TEAM_GROUP_NAME;
+        }
+        
+        
+        
+        def processApi = context.apiClient.processAPI;
+        statusList = statusList.split(",").findAll{ it } as String[];
+        def requestDAO = context.apiClient.getDAO(BLRequestDAO.class);
+        def isStatusListEmpty = statusList.length == 0;
+        def requests, requestCount;
+        if (isStatusListEmpty) {
+            requests = requestDAO.find(p as int, c as int)
+            requestCount = requestDAO.countForFind();
+        } else {
+            requests = requestDAO.findByStatus(statusList, p as int, c as int)
+            requestCount = requestDAO.countForFindByStatus(statusList);
+        }
+        
 
-		def CHECK_REQUEST_TASK_NAME= "Check loan application";
-		def CHECK_REQUEST_BY_RISK_TEAM = "Risk manager check";
-		def DOCUMENT_LIST_NAME = "attachments";
-		def checkTaskId, riskTaskId;
-		def requestResponseList = [];
-		for(BLRequest loanRequest : requests) {
-			def requestResponse = loanRequest.properties.findAll { k, v -> !(k in ['class','metaClass']) }
-			def List<HumanTaskInstance> taskList = processApi.getHumanTaskInstances(loanRequest.processInstanceId, CHECK_REQUEST_TASK_NAME, 0, 1);
-			checkTaskId = taskList?.getAt(0)?.id;
-			if(isRiskTeam) {
-				def List<HumanTaskInstance> riskTaskList = processApi.getHumanTaskInstances(loanRequest.processInstanceId, CHECK_REQUEST_BY_RISK_TEAM, 0, 1);
-				riskTaskId = riskTaskList?.getAt(0)?.id;
-			}
+        def CHECK_REQUEST_TASK_NAME= "Check loan application";
+        def CHECK_REQUEST_BY_RISK_TEAM = "Risk manager check";
+        def DOCUMENT_LIST_NAME = "attachments";
+        def checkTaskId, riskTaskId;
+        def requestResponseList = [];
+        for(BLRequest loanRequest : requests) {
+            def requestResponse = loanRequest.properties.findAll { k, v -> !(k in ['class','metaClass']) }
+			//LOGGER.info("processInstanceId={}, status={}", loanRequest.processInstanceId, loanRequest.requestStatus);
 			
-	
-			def documentList = processApi.getDocumentList(loanRequest.processInstanceId, DOCUMENT_LIST_NAME, 0, 10);
-			
-			//documents.forEach { t -> processApi.getDocumentContent(t.contentStorageId)}
-			def attachments = documentList.collect{ doc -> 
-				/*def bytes = processApi.getDocumentContent(doc.contentStorageId)
-				def base64 = Base64.encoder.encodeToString(bytes)*/
-				def mimeType = doc.contentMimeType;
-				[
-					name: doc.name,
-					fileName: doc.contentFileName,
-					mimeType: doc.contentMimeType,
-					contentStorageId: doc.contentStorageId
-					//content: "data:${mimeType};base64,${base64}"
-				]
-			}
-			
-			requestResponse.put("attachments",attachments);
-			requestResponse.put("taskId",checkTaskId);
-			requestResponse.put("riskTaskId",riskTaskId);
-			requestResponse.put("createdAt", loanRequest.createdAt.format(DateTimeFormatter.ISO_LOCAL_DATE))
-			requestResponse.put("updatedAt", loanRequest.updatedAt.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME))
-			requestResponseList.add(requestResponse);
-		}
-		
+			// Make sense if we save the documents in an external DB to outlive the process Instance life cycle
+            if (loanRequest.requestStatus != "approved" && loanRequest.requestStatus != "rejected") {
+            def List<HumanTaskInstance> taskList = processApi.getHumanTaskInstances(loanRequest.processInstanceId, CHECK_REQUEST_TASK_NAME, 0, 1);
+            checkTaskId = taskList?.getAt(0)?.id;
+            
+            if(isRiskTeam) {
+                def List<HumanTaskInstance> riskTaskList = processApi.getHumanTaskInstances(loanRequest.processInstanceId, CHECK_REQUEST_BY_RISK_TEAM, 0, 1);
+                riskTaskId = riskTaskList?.getAt(0)?.id;
+            }
+            
+            
+                
+            def documentList = processApi.getDocumentList(loanRequest.processInstanceId, DOCUMENT_LIST_NAME, 0, 10);
+            
+            //documents.forEach { t -> processApi.getDocumentContent(t.contentStorageId)}
+            def attachments = documentList.collect{ doc -> 
+                /*def bytes = processApi.getDocumentContent(doc.contentStorageId)
+                def base64 = Base64.encoder.encodeToString(bytes)*/
+                def mimeType = doc.contentMimeType;
+                [
+                    name: doc.name,
+                    fileName: doc.contentFileName,
+                    mimeType: doc.contentMimeType,
+                    contentStorageId: doc.contentStorageId
+                    //content: "data:${mimeType};base64,${base64}"
+                ]
+            }
+            
+            requestResponse.put("attachments",attachments);
+            }
+            requestResponse.put("taskId",checkTaskId);
+            requestResponse.put("riskTaskId",riskTaskId);
+            requestResponse.put("createdAt", loanRequest.createdAt.format(DateTimeFormatter.ISO_LOCAL_DATE))
+            requestResponse.put("updatedAt", loanRequest.updatedAt.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME))
+            requestResponseList.add(requestResponse);
+        }
+        
 
 
-        def result = ["requests":requestResponseList, "count": requestCount ];
+        def result = ["requests":requestResponseList, "count": requestCount, isRiskTeam: isRiskTeam ];
 
         return buildResponse(responseBuilder, HttpServletResponse.SC_OK, new JsonBuilder(result).toString())
     }
@@ -130,7 +137,7 @@ class RequestListByStatus implements RestApiController {
             build()
         }
     }
-	
+    
 
     /**
      * Returns a paged result like Bonita BPM REST APIs.
